@@ -1,22 +1,21 @@
 {
   "manifestVersion": 1,
-  "id": "plugin_template",
-  "name": "Plugin Template",
-  "author": "remnote",
-  "repoUrl": "",
+  "id": "remnote-mcp-bridge",
+  "name": "MCP Bridge",
+  "author": "Quentin Tousart",
+  "description": "Connect RemNote to AI assistants (Claude, GPT, etc.) via MCP. Create, search, read, and update notes directly from your AI.",
   "version": {
-    "major": 0,
-    "minor": 0,
-    "patch": 1
+    "major": 1,
+    "minor": 1,
+    "patch": 0
   },
-  "theme": [],
+  "repoUrl": "https://github.com/quentintou/remnote-mcp-bridge",
   "enableOnMobile": false,
-  "description": "",
   "requestNative": false,
   "requiredScopes": [
     {
       "type": "All",
-      "level": "Read"
+      "level": "ReadCreateModifyDelete"
     }
   ]
 }

@@ -1,45 +1,86 @@
+/**
+ * RemNote MCP Bridge Plugin
+ *
+ * Entry point for the RemNote plugin that connects to the MCP server.
+ * This file only registers the widget - the actual widget is in right_sidebar.tsx
+ */
+
 import { declareIndexPlugin, type ReactRNPlugin, WidgetLocation } from '@remnote/plugin-sdk';
 import '../style.css';
-import '../index.css'; // import <widget-name>.css
+import {
+  SETTING_AUTO_TAG_ENABLED,
+  SETTING_AUTO_TAG,
+  SETTING_JOURNAL_PREFIX,
+  SETTING_JOURNAL_TIMESTAMP,
+  SETTING_WS_URL,
+  SETTING_DEFAULT_PARENT,
+  DEFAULT_AUTO_TAG,
+  DEFAULT_JOURNAL_PREFIX,
+  DEFAULT_WS_URL,
+} from '../settings';
 
 async function onActivate(plugin: ReactRNPlugin) {
-  // Register settings
-  await plugin.settings.registerStringSetting({
-    id: 'name',
-    title: 'What is your Name?',
-    defaultValue: 'Bob',
-  });
+  console.log('[MCP Bridge] Plugin activating...');
 
+  // Register settings
   await plugin.settings.registerBooleanSetting({
-    id: 'pizza',
-    title: 'Do you like pizza?',
+    id: SETTING_AUTO_TAG_ENABLED,
+    title: 'Auto-tag MCP notes',
+    description: 'Automatically add a tag to all notes created via MCP',
     defaultValue: true,
   });
 
-  await plugin.settings.registerNumberSetting({
-    id: 'favorite-number',
-    title: 'What is your favorite number?',
-    defaultValue: 42,
+  await plugin.settings.registerStringSetting({
+    id: SETTING_AUTO_TAG,
+    title: 'Auto-tag name',
+    description: 'Tag name to add to MCP-created notes (e.g., "MCP", "Claude")',
+    defaultValue: DEFAULT_AUTO_TAG,
   });
 
-  // A command that inserts text into the editor if focused.
-  await plugin.app.registerCommand({
-    id: 'editor-command',
-    name: 'Editor Command',
-    action: async () => {
-      plugin.editor.insertPlainText('Hello World!');
+  await plugin.settings.registerStringSetting({
+    id: SETTING_JOURNAL_PREFIX,
+    title: 'Journal entry prefix',
+    description: 'Prefix for journal entries (e.g., "[Claude]", "[MCP]")',
+    defaultValue: DEFAULT_JOURNAL_PREFIX,
+  });
+
+  await plugin.settings.registerBooleanSetting({
+    id: SETTING_JOURNAL_TIMESTAMP,
+    title: 'Add timestamp to journal',
+    description: 'Include timestamp in journal entries',
+    defaultValue: true,
+  });
+
+  await plugin.settings.registerStringSetting({
+    id: SETTING_WS_URL,
+    title: 'WebSocket server URL',
+    description: 'URL of the MCP WebSocket server',
+    defaultValue: DEFAULT_WS_URL,
+  });
+
+  await plugin.settings.registerStringSetting({
+    id: SETTING_DEFAULT_PARENT,
+    title: 'Default parent Rem ID',
+    description: 'ID of the Rem to use as default parent for new notes (leave empty for root)',
+    defaultValue: '',
+  });
+
+  console.log('[MCP Bridge] Settings registered');
+
+  // Register the sidebar widget
+  await plugin.app.registerWidget('right_sidebar', WidgetLocation.RightSidebar, {
+    dimensions: {
+      width: 300,
+      height: '100%'
     },
+    widgetTabIcon: 'https://claude.ai/favicon.ico'
   });
 
-  // Show a toast notification to the user.
-  await plugin.app.toast("I'm a toast!");
-
-  // Register a sidebar widget.
-  await plugin.app.registerWidget('sample_widget', WidgetLocation.RightSidebar, {
-    dimensions: { height: 'auto', width: '100%' },
-  });
+  console.log('[MCP Bridge] Widget registered successfully');
 }
 
-async function onDeactivate(_: ReactRNPlugin) {}
+async function onDeactivate(_: ReactRNPlugin) {
+  console.log('[MCP Bridge] Plugin deactivating...');
+}
 
 declareIndexPlugin(onActivate, onDeactivate);
