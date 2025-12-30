@@ -1,13 +1,13 @@
 # RemNote MCP Bridge
 
-Connect RemNote to AI assistants (Claude, GPT, etc.) via the **Model Context Protocol (MCP)**. This plugin enables bidirectional communication, allowing AI to read and write directly to your RemNote knowledge base.
+Connect RemNote to AI assistants (Claude, GPT, etc.) via the **Model Context Protocol (MCP)**. This project enables bidirectional communication, allowing AI to read and write directly to your RemNote knowledge base.
 
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## What is MCP?
 
-[Model Context Protocol](https://modelcontextprotocol.io/) is an open standard by Anthropic that allows AI assistants to interact with external tools and data sources. With this plugin, your AI assistant becomes a true PKM companion.
+[Model Context Protocol](https://modelcontextprotocol.io/) is an open standard by Anthropic that allows AI assistants to interact with external tools and data sources. With this bridge, your AI assistant becomes a true PKM companion.
 
 ## Features
 
@@ -25,61 +25,76 @@ Connect RemNote to AI assistants (Claude, GPT, etc.) via the **Model Context Pro
 - **Configurable Settings** - Customize behavior through RemNote settings
 - **Real-time Status** - Connection status indicator in sidebar widget
 
+## Quick Start (Remote/Claude Mobile)
+
+Deploy the MCP server to Railway for Claude Mobile access:
+
+```bash
+cd server
+railway login
+railway init
+railway up
+```
+
+Your SSE endpoint: `https://your-app.up.railway.app/sse`
+
+See [server/README.md](server/README.md) for full deployment guide.
+
 ## Installation
 
 ### 1. Install the RemNote Plugin
 
-Download `PluginZip.zip` from [Releases](https://github.com/quentintou/remnote-mcp-bridge/releases) and install it in RemNote:
-- Go to **Settings > Plugins > Install from zip**
-- Select the downloaded zip file
+**Option A: Marketplace** (once approved)
+- Search for "MCP Bridge" in RemNote's Plugin marketplace
 
-Or for development:
+**Option B: Development Mode**
 ```bash
-git clone https://github.com/quentintou/remnote-mcp-bridge.git
+git clone https://github.com/AlexHagemeister/remnote-mcp-bridge.git
 cd remnote-mcp-bridge
 npm install
 npm run dev
 ```
+Then in RemNote: **Settings → Plugins → Build → Develop from localhost**
 
-### 2. Install the MCP Server
+### 2. Run the MCP Server
 
-The MCP server acts as a bridge between your AI assistant and this plugin.
+The MCP server is included in the `server/` directory:
 
 ```bash
-npm install -g remnote-mcp-server
-```
-
-Or clone and run locally:
-```bash
-git clone https://github.com/quentintou/remnote-mcp-server.git
-cd remnote-mcp-server
+cd server
 npm install
-npm start
+npm run dev
 ```
 
 ### 3. Configure Your AI Assistant
 
-#### For Claude Desktop
+#### For Claude Desktop (SSE Remote)
 Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
     "remnote": {
-      "command": "remnote-mcp-server",
-      "args": []
+      "url": "https://your-app.up.railway.app/sse"
     }
   }
 }
 ```
 
-#### For Claude Code CLI
-Add to your MCP settings:
+#### For Claude Desktop (Local)
 ```json
 {
-  "remnote": {
-    "command": "remnote-mcp-server"
+  "mcpServers": {
+    "remnote": {
+      "url": "http://localhost:3002/sse"
+    }
   }
 }
+```
+
+#### For Claude Mobile
+Add MCP server with URL:
+```
+https://your-app.up.railway.app/sse
 ```
 
 ## Configuration
@@ -121,47 +136,70 @@ Once everything is connected, you can ask your AI assistant things like:
 ## Architecture
 
 ```
-┌─────────────────┐     WebSocket      ┌─────────────────┐
-│   AI Assistant  │◄──────────────────►│   MCP Server    │
-│ (Claude, etc.)  │     (stdio/MCP)    │  (Node.js)      │
+┌─────────────────┐     SSE/HTTP       ┌─────────────────┐
+│   Claude App    │◄──────────────────►│   MCP Server    │
+│ (Mobile/Desktop)│    /sse endpoint   │ (server/ dir)   │
 └─────────────────┘                    └────────┬────────┘
-                                                │
-                                           WebSocket
-                                           :3002
-                                                │
-                                       ┌────────▼────────┐
-                                       │  RemNote Plugin │
-                                       │  (This plugin)  │
-                                       └────────┬────────┘
-                                                │
+                                               │
+                                          WebSocket
+                                          wss://:PORT
+                                               │
+                                       ┌───────▼────────┐
+                                       │ RemNote Plugin │
+                                       │  (In browser)  │
+                                       └───────┬────────┘
+                                               │
                                           Plugin SDK
-                                                │
-                                       ┌────────▼────────┐
-                                       │    RemNote      │
-                                       │ Knowledge Base  │
-                                       └─────────────────┘
+                                               │
+                                       ┌───────▼────────┐
+                                       │    RemNote     │
+                                       │ Knowledge Base │
+                                       └────────────────┘
 ```
+
+The MCP server bridges two protocols:
+- **SSE (Server-Sent Events)** for Claude clients
+- **WebSocket** for the RemNote plugin running in your browser
 
 ## Development
 
+### Plugin (runs in RemNote)
 ```bash
-# Install dependencies
+# install dependencies
 npm install
 
-# Run in development mode (hot reload)
+# run in dev mode (hot reload)
 npm run dev
 
-# Build for production
+# build for production
+npm run build
+# output: PluginZip.zip
+```
+
+### Server (runs on Railway or locally)
+```bash
+cd server
+
+# install dependencies
+npm install
+
+# run in dev mode
+npm run dev
+
+# build
 npm run build
 
-# The plugin zip will be created as PluginZip.zip
+# run production
+npm start
 ```
 
 ## Troubleshooting
 
 ### Plugin shows "Disconnected"
-- Ensure the MCP server is running (`remnote-mcp-server`)
-- Check the WebSocket URL in settings (default: `ws://127.0.0.1:3002`)
+- Ensure the MCP server is running (`cd server && npm run dev`)
+- Check the WebSocket URL in settings:
+  - Local: `ws://127.0.0.1:3002`
+  - Railway: `wss://your-app.up.railway.app`
 - Look for errors in RemNote's developer console (Cmd+Option+I)
 
 ### "Invalid event setCustomCSS" errors
@@ -187,12 +225,21 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 MIT License - see [LICENSE](LICENSE) for details.
 
+## Links
+
+| Resource | URL |
+|----------|-----|
+| GitHub Repo | https://github.com/AlexHagemeister/remnote-mcp-bridge |
+| Plugin Files (GitHub Pages) | https://alexhagemeister.github.io/remnote-mcp-bridge/ |
+| Demo Railway Server | https://remnote-mcp-production.up.railway.app |
+
 ## Acknowledgments
 
 - [RemNote](https://remnote.com) for the amazing PKM tool
 - [Anthropic](https://anthropic.com) for Claude and the MCP protocol
 - The RemNote plugin community for inspiration
+- Original concept by [Quentin Tousart](https://github.com/quentintou)
 
 ---
 
-**Made with Claude Code** - This plugin was developed in collaboration with Claude AI.
+**Made with Claude** - This plugin was developed in collaboration with Claude AI.
