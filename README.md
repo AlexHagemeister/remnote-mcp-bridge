@@ -25,20 +25,23 @@ Connect RemNote to AI assistants (Claude, GPT, etc.) via the **Model Context Pro
 - **Configurable Settings** - Customize behavior through RemNote settings
 - **Real-time Status** - Connection status indicator in sidebar widget
 
-## Quick Start (Remote/Claude Mobile)
+## ⚠️ Important: Deploy Your Own Server
 
-Deploy the MCP server to Railway for Claude Mobile access:
+**Security Notice:** Each user must deploy their own MCP server instance. Do not share server URLs between users, as this could expose your RemNote data to others.
 
-```bash
-cd server
-railway login
-railway init
-railway up
-```
+### Quick Start Options
 
-Your SSE endpoint: `https://your-app.up.railway.app/sse`
+**Option A: Local Development** (Recommended for testing)
+- Server runs on your computer
+- No cloud deployment needed
+- Works with Claude Desktop only
 
-See [server/README.md](server/README.md) for full deployment guide.
+**Option B: Cloud Deployment** (Required for Claude Mobile)
+- Deploy to Railway, Render, or similar
+- Enables Claude Mobile access
+- Each user needs their own deployment
+
+See [server/README.md](server/README.md) for detailed deployment instructions.
 
 ## Installation
 
@@ -56,9 +59,11 @@ npm run dev
 ```
 Then in RemNote: **Settings → Plugins → Build → Develop from localhost**
 
-### 2. Run the MCP Server
+### 2. Deploy Your MCP Server
 
-The MCP server is included in the `server/` directory:
+**⚠️ Critical: Each user must deploy their own server instance for security.**
+
+#### Option A: Local Server (Easiest)
 
 ```bash
 cd server
@@ -66,36 +71,48 @@ npm install
 npm run dev
 ```
 
-### 3. Configure Your AI Assistant
+Server runs at `http://localhost:3002`
 
-#### For Claude Desktop (SSE Remote)
-Add to your `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "remnote": {
-      "url": "https://your-app.up.railway.app/sse"
-    }
-  }
-}
-```
+#### Option B: Railway Deployment (For Claude Mobile)
 
-#### For Claude Desktop (Local)
-```json
-{
-  "mcpServers": {
-    "remnote": {
-      "url": "http://localhost:3002/sse"
-    }
-  }
-}
-```
+1. **Fork this repository** to your GitHub account
+2. **Deploy to Railway:**
+   ```bash
+   cd server
+   railway login
+   railway init
+   railway up
+   ```
+3. **Note your URL:** `https://your-app-name.up.railway.app`
+
+See [server/README.md](server/README.md) for detailed deployment guides including Render, Fly.io, and Docker.
+
+### 3. Configure RemNote Plugin
+
+In RemNote: **Settings → Plugins → MCP Bridge**
+
+Set **WebSocket server URL** to:
+- Local: `ws://127.0.0.1:3002`
+- Railway: `wss://your-app-name.up.railway.app`
+
+### 4. Configure Your AI Assistant
+
+#### For Claude Desktop/Web
+
+Go to **Settings → Connectors → Add custom connector**
+
+Enter your server URL:
+- Local: `http://localhost:3002/sse`
+- Railway: `https://your-app-name.up.railway.app/sse`
 
 #### For Claude Mobile
-Add MCP server with URL:
+
+Add custom connector with your Railway URL:
 ```
-https://your-app.up.railway.app/sse
+https://your-app-name.up.railway.app/sse
 ```
+
+**Note:** Claude Mobile requires a cloud-deployed server (Railway, Render, etc.)
 
 ## Configuration
 
@@ -196,10 +213,11 @@ npm start
 ## Troubleshooting
 
 ### Plugin shows "Disconnected"
-- Ensure the MCP server is running (`cd server && npm run dev`)
-- Check the WebSocket URL in settings:
+- Ensure YOUR MCP server is running (local or deployed)
+- Check the WebSocket URL in RemNote plugin settings:
   - Local: `ws://127.0.0.1:3002`
-  - Railway: `wss://your-app.up.railway.app`
+  - Railway: `wss://your-app-name.up.railway.app` (use YOUR deployment URL)
+- Verify your server is accessible: `curl https://your-app-name.up.railway.app/health`
 - Look for errors in RemNote's developer console (Cmd+Option+I)
 
 ### "Invalid event setCustomCSS" errors
@@ -234,10 +252,16 @@ RemNote (your browser) → MCP Server (your deployment) → AI Assistant (Claude
 
 ### Security recommendations:
 
-- **Self-host the MCP server** if handling sensitive data
+- **Deploy your own server** - Never share server URLs with other users
+- **Each user needs their own deployment** - Sharing servers exposes data to others
 - **Review tool calls** before allowing AI to execute them
-- **Use Railway/cloud deployment** only for non-sensitive knowledge bases
+- **Use local server** for maximum security (no internet transmission)
 - **No data is stored** by the MCP server - it only bridges connections
+- **Keep your server URL private** - Treat it like a password
+
+### Why each user needs their own server:
+
+The MCP server acts as a bridge between your RemNote and AI assistants. If multiple users connect to the same server, their data could potentially be mixed or exposed to each other. **Always deploy your own instance.**
 
 By using this plugin, you acknowledge that your RemNote data will be transmitted to the services you configure.
 
@@ -261,7 +285,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 |----------|-----|
 | GitHub Repo | https://github.com/AlexHagemeister/remnote-mcp-bridge |
 | Plugin Files (GitHub Pages) | https://alexhagemeister.github.io/remnote-mcp-bridge/ |
-| Demo Railway Server | https://remnote-mcp-production.up.railway.app |
+| Server Deployment Guide | [server/README.md](server/README.md) |
 
 ## Acknowledgments
 

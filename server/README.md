@@ -2,6 +2,10 @@
 
 MCP server that bridges Claude (via SSE) with RemNote (via the MCP Bridge plugin).
 
+## ⚠️ Security Notice
+
+**Each user must deploy their own server instance.** Do not share your server URL with others, as this could expose your RemNote data. The server has no authentication and routes requests to connected RemNote instances.
+
 ## Architecture
 
 ```
@@ -26,36 +30,61 @@ MCP server that bridges Claude (via SSE) with RemNote (via the MCP Bridge plugin
                                        └────────────────┘
 ```
 
-## Deployment to Railway
+## Deployment Options
 
-### 1. Create Railway Project
+### Option 1: Railway (Recommended)
+
+**Prerequisites:**
+- Railway account (free tier available)
+- Railway CLI installed: `npm install -g @railway/cli`
+
+**Steps:**
+
+1. **Fork the repository** to your GitHub account first
+2. **Deploy from server directory:**
+   ```bash
+   cd server
+   railway login
+   railway init
+   railway up
+   ```
+3. **Get your URL:** Railway provides `https://your-app-name.up.railway.app`
+4. **Keep your URL private** - treat it like a password
+
+### Option 2: Render
+
+1. Create account at [render.com](https://render.com)
+2. Create new Web Service
+3. Connect your forked GitHub repo
+4. Set root directory to `server`
+5. Build command: `npm install && npm run build`
+6. Start command: `npm start`
+
+### Option 3: Fly.io
 
 ```bash
-# from server directory
 cd server
-
-# login to railway
-railway login
-
-# init project
-railway init
-
-# link to project (if already created in dashboard)
-railway link
+fly launch
+fly deploy
 ```
 
-### 2. Deploy
+### Option 4: Docker (Self-hosted)
 
 ```bash
-railway up
+cd server
+docker build -t remnote-mcp-server .
+docker run -p 3002:3002 remnote-mcp-server
 ```
 
-### 3. Get Your URL
+### Option 5: Local Development
 
-After deployment, Railway provides a URL like:
+```bash
+cd server
+npm install
+npm run dev
 ```
-https://your-app-name.up.railway.app
-```
+
+Server runs at `http://localhost:3002`
 
 ## Environment Variables
 
@@ -65,35 +94,34 @@ https://your-app-name.up.railway.app
 
 **Note:** No `REMNOTE_API_KEY` needed - RemNote access is via the browser plugin.
 
-## Claude MCP Configuration
+## Claude Configuration
 
-### Claude Desktop (claude_desktop_config.json)
+### Claude Desktop/Web
 
-```json
-{
-  "mcpServers": {
-    "remnote": {
-      "url": "https://your-app-name.up.railway.app/sse"
-    }
-  }
-}
-```
+Go to **Settings → Connectors → Add custom connector**
 
-### Claude Mobile App
+Enter **your** server URL (not someone else's!):
+- Deployed: `https://your-app-name.up.railway.app/sse`
+- Local: `http://localhost:3002/sse`
 
-Add MCP server with URL:
+### Claude Mobile
+
+Add custom connector with **your** deployed URL:
 ```
 https://your-app-name.up.railway.app/sse
 ```
 
+**Important:** Replace `your-app-name` with your actual deployment URL. Never use someone else's server URL.
+
 ## RemNote Plugin Configuration
 
-In RemNote, go to **Settings > Plugins > MCP Bridge** and set:
+In RemNote, go to **Settings → Plugins → MCP Bridge** and set:
 
-- **WebSocket server URL**: `wss://your-app-name.up.railway.app`
+**WebSocket server URL** to **your** server:
+- Deployed: `wss://your-app-name.up.railway.app`
+- Local: `ws://127.0.0.1:3002`
 
-For local development:
-- **WebSocket server URL**: `ws://127.0.0.1:3002`
+**Security:** Use only your own server URL. Never connect to someone else's server as it could expose your RemNote data.
 
 ## Available MCP Tools
 
