@@ -211,6 +211,36 @@ npm start
 - Check if a default parent ID is set (might be creating under a specific Rem)
 - Verify the auto-tag setting isn't filtering your view
 
+## Data Privacy
+
+**Important:** This plugin sends your RemNote data to external services.
+
+When you use this plugin:
+- **RemNote data is transmitted** to the MCP server you configure (local or remote)
+- **The MCP server forwards** this data to AI assistants (Claude, GPT, etc.) that you connect
+- **Data includes** note titles, content, tags, and hierarchical structure based on the tools invoked
+
+### What data is sent?
+
+The plugin only sends data when:
+1. You explicitly invoke an MCP tool (create, search, read, update notes)
+2. The AI assistant requests access to your RemNote data
+
+### Data flow:
+
+```
+RemNote (your browser) → MCP Server (your deployment) → AI Assistant (Claude/GPT)
+```
+
+### Security recommendations:
+
+- **Self-host the MCP server** if handling sensitive data
+- **Review tool calls** before allowing AI to execute them
+- **Use Railway/cloud deployment** only for non-sensitive knowledge bases
+- **No data is stored** by the MCP server - it only bridges connections
+
+By using this plugin, you acknowledge that your RemNote data will be transmitted to the services you configure.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
