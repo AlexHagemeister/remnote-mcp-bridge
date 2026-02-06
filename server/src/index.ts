@@ -317,12 +317,15 @@ function createMcpServer(pluginManager: RequestSender): McpServer {
       title: z.string().describe('Title of the note'),
       content: z.string().optional().describe('Content of the note (each line becomes a child)'),
       parentId: z.string().optional().describe('ID of parent Rem (optional)'),
-      tags: z.array(z.string()).optional().describe('Tags to add to the note')
+      tags: z.array(z.string()).optional().describe('Tags to add to the note'),
+      markAs: z.enum(['document', 'folder']).optional().describe(
+        'Mark the Rem as a document or folder. Documents appear in the sidebar with a doc icon and act as zoom points. Folders are documents that organize other documents.'
+      )
     },
-    async ({ title, content, parentId, tags }): Promise<CallToolResult> => {
+    async ({ title, content, parentId, tags, markAs }): Promise<CallToolResult> => {
       try {
         const result = await pluginManager.sendRequest('create_note', {
-          title, content, parentId, tags
+          title, content, parentId, tags, markAs
         });
         
         return {
@@ -423,12 +426,15 @@ function createMcpServer(pluginManager: RequestSender): McpServer {
       title: z.string().optional().describe('New title'),
       appendContent: z.string().optional().describe('Content to append'),
       addTags: z.array(z.string()).optional().describe('Tags to add'),
-      removeTags: z.array(z.string()).optional().describe('Tags to remove')
+      removeTags: z.array(z.string()).optional().describe('Tags to remove'),
+      markAs: z.enum(['document', 'folder']).optional().describe(
+        'Mark the Rem as a document or folder. Documents appear in the sidebar with a doc icon and act as zoom points. Folders are documents that organize other documents.'
+      )
     },
-    async ({ remId, title, appendContent, addTags, removeTags }): Promise<CallToolResult> => {
+    async ({ remId, title, appendContent, addTags, removeTags, markAs }): Promise<CallToolResult> => {
       try {
         const result = await pluginManager.sendRequest('update_note', {
-          remId, title, appendContent, addTags, removeTags
+          remId, title, appendContent, addTags, removeTags, markAs
         });
         
         return {

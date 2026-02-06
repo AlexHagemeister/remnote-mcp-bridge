@@ -133,10 +133,10 @@ Once connected, your AI assistant can use these tools:
 
 | Tool | Description |
 |------|-------------|
-| `remnote_create_note` | Create a new note with title, content, parent, and tags |
+| `remnote_create_note` | Create a new note with title, content, parent, tags. Optional `markAs` to create as document or folder. |
 | `remnote_search` | Search the knowledge base with query and filters |
 | `remnote_read_note` | Read a note's content and children by ID |
-| `remnote_update_note` | Update title, append content, add/remove tags |
+| `remnote_update_note` | Update title, append content, add/remove tags. Optional `markAs` to convert to document or folder. |
 | `remnote_append_journal` | Add an entry to today's daily document |
 | `remnote_status` | Check connection status |
 
