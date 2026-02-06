@@ -15,8 +15,29 @@ import { createServer } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+
+// ============================================================================
+// stdio mode detection
+// ============================================================================
+
+const isStdioMode = process.argv.includes('--stdio');
+
+// in stdio mode, stdout is reserved for json-rpc protocol messages.
+// redirect all console output to stderr so it doesnt corrupt the transport.
+if (isStdioMode) {
+
+  const stderrWrite = (args: unknown[]) => {
+    process.stderr.write(args.map(String).join(' ') + '\n');
+  };
+
+  console.log = (...args: unknown[]) => stderrWrite(args);
+  console.error = (...args: unknown[]) => stderrWrite(args);
+  console.warn = (...args: unknown[]) => stderrWrite(args);
+  console.info = (...args: unknown[]) => stderrWrite(args);
+}
 
 // ============================================================================
 // types
@@ -40,6 +61,15 @@ interface PendingRequest {
   timeout: NodeJS.Timeout;
 }
 
+/**
+ * common interface for sending requests to the remnote plugin.
+ * implemented by both the real ws manager and the http proxy.
+ */
+interface RequestSender {
+  sendRequest(action: string, payload: Record<string, unknown>): Promise<unknown>;
+  hasActiveConnection(): boolean;
+}
+
 // ============================================================================
 // configuration
 // ============================================================================
@@ -51,7 +81,7 @@ const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
 // websocket connection manager (plugin side)
 // ============================================================================
 
-class PluginConnectionManager {
+class PluginConnectionManager implements RequestSender {
   private connections: Map<string, WebSocket> = new Map();
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private activeConnectionId: string | null = null;
@@ -174,10 +204,101 @@ class PluginConnectionManager {
 }
 
 // ============================================================================
+// proxy request sender (for stdio instances that forward to existing server)
+// ============================================================================
+
+/**
+ * forwards tool requests via http to an already-running server instance.
+ * used when a second --stdio process detects an existing server on the port.
+ */
+class ProxyRequestSender implements RequestSender {
+
+  private baseUrl: string;
+
+  constructor(baseUrl: string) {
+
+    this.baseUrl = baseUrl;
+  }
+
+  /**
+   * optimistic — actual plugin check happens on the real server.
+   * if plugin is disconnected, sendRequest will throw with a clear message.
+   */
+  hasActiveConnection(): boolean {
+
+    return true;
+  }
+
+  /**
+   * forward request to the real server's /api/request endpoint.
+   */
+  async sendRequest(action: string, payload: Record<string, unknown>): Promise<unknown> {
+
+    const res = await fetch(`${this.baseUrl}/api/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, payload }),
+    });
+
+    if (!res.ok) {
+
+      throw new Error(`Proxy request failed: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json() as { result?: unknown; error?: string };
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    return data.result;
+  }
+}
+
+// ============================================================================
+// existing server discovery
+// ============================================================================
+
+/**
+ * scan ports for a running remnote mcp server instance.
+ * checks startPort through startPort + maxAttempts - 1.
+ * returns the base url of the first healthy server found, or null.
+ */
+async function findExistingServer(
+  startPort: number,
+  maxAttempts: number = 5
+): Promise<string | null> {
+
+  for (let i = 0; i < maxAttempts; i++) {
+
+    const port = startPort + i;
+
+    try {
+
+      const res = await fetch(`http://localhost:${port}/health`, {
+        signal: AbortSignal.timeout(1500),
+      });
+
+      const data = await res.json() as { status: string };
+
+      if (data.status === 'ok') {
+
+        return `http://localhost:${port}`;
+      }
+    } catch {
+
+      // port not responding, try next
+    }
+  }
+
+  return null;
+}
+
+// ============================================================================
 // mcp server setup
 // ============================================================================
 
-function createMcpServer(pluginManager: PluginConnectionManager): McpServer {
+function createMcpServer(pluginManager: RequestSender): McpServer {
   const server = new McpServer(
     {
       name: 'remnote-mcp-server',
@@ -413,52 +534,158 @@ function createMcpServer(pluginManager: PluginConnectionManager): McpServer {
 // express app + sse transport
 // ============================================================================
 
+/**
+ * start http + websocket server for plugin connections.
+ * handles EADDRINUSE by retrying on next port.
+ */
+function startHttpServer(
+  httpServer: ReturnType<typeof createServer>,
+  port: number
+): Promise<number> {
+
+  return new Promise((resolve, reject) => {
+
+    const onError = (err: NodeJS.ErrnoException) => {
+
+      if (err.code === 'EADDRINUSE') {
+
+        // port busy - try next port
+        console.warn(`[server] port ${port} in use, trying ${port + 1}`);
+        httpServer.removeListener('error', onError);
+        startHttpServer(httpServer, port + 1).then(resolve).catch(reject);
+      } else {
+        reject(err);
+      }
+    };
+
+    httpServer.on('error', onError);
+
+    httpServer.listen(port, () => {
+      httpServer.removeListener('error', onError);
+      resolve(port);
+    });
+  });
+}
+
 async function main(): Promise<void> {
+
+  // =========================================================================
+  // stdio proxy mode: if an existing server is running, just proxy to it.
+  // this lets multiple mcp clients (cursor + claude desktop) share the
+  // single websocket connection to the remnote plugin.
+  // =========================================================================
+
+  if (isStdioMode) {
+
+    const existingServerUrl = await findExistingServer(PORT);
+
+    if (existingServerUrl) {
+
+      console.log(`[stdio] existing server found at ${existingServerUrl}, running in proxy mode`);
+
+      const proxyManager = new ProxyRequestSender(existingServerUrl);
+      const mcpServer = createMcpServer(proxyManager);
+      const transport = new StdioServerTransport();
+      await mcpServer.connect(transport);
+
+      console.log(`[stdio] proxy mode active — all tool calls forwarded to ${existingServerUrl}`);
+
+      // no http/ws server needed, just keep stdio alive
+      return;
+    }
+
+    // no existing server found, fall through to start full server
+    console.log(`[stdio] no existing server found, starting full server`);
+  }
+
+  // =========================================================================
+  // full server mode: start http/ws + optional stdio transport
+  // =========================================================================
+
   const app = express();
   app.use(express.json());
-  
+
   // create http server for both express and websocket
   const httpServer = createServer(app);
-  
+
   // plugin connection manager
   const pluginManager = new PluginConnectionManager();
-  
-  // websocket server for remnote plugin connections
+
+  // -------------------------------------------------------------------------
+  // health check endpoint (available in both modes)
+  // -------------------------------------------------------------------------
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({
+      status: 'ok',
+      pluginConnected: pluginManager.hasActiveConnection(),
+      mode: isStdioMode ? 'stdio' : 'sse'
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // internal api: proxy stdio instances forward tool requests here
+  // -------------------------------------------------------------------------
+  app.post('/api/request', async (req: Request, res: Response) => {
+
+    const { action, payload } = req.body as {
+      action: string;
+      payload: Record<string, unknown>;
+    };
+
+    try {
+
+      const result = await pluginManager.sendRequest(action, payload);
+      res.json({ result });
+    } catch (err) {
+
+      res.json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // start http server first, THEN attach websocket.
+  // creating WSS before listen causes unhandled error on EADDRINUSE
+  // because the error propagates to both httpServer AND the WSS.
+  const actualPort = await startHttpServer(httpServer, PORT);
+
+  // websocket server for remnote plugin connections (safe now, port is bound)
   const wss = new WebSocketServer({ server: httpServer });
-  
+
   wss.on('connection', (ws) => {
     pluginManager.addConnection(ws);
   });
-  
+
   // heartbeat interval to keep connections alive
   setInterval(() => {
     pluginManager.pingAll();
   }, 30000);
-  
+
+  // =========================================================================
+  // sse endpoints (available in ALL modes so multiple clients can connect)
+  // cursor uses stdio, claude desktop / mobile use sse — same server instance
+  // =========================================================================
+
   // store active sse transports
-  const transports: Map<string, SSEServerTransport> = new Map();
-  
-  // -------------------------------------------------------------------------
-  // sse endpoint (legacy http+sse protocol)
-  // -------------------------------------------------------------------------
+  const sseTransports: Map<string, SSEServerTransport> = new Map();
+
   app.get('/sse', async (req: Request, res: Response) => {
     console.log('[sse] new connection');
-    
+
     try {
+
       // create sse transport - messages endpoint for client posts
       const transport = new SSEServerTransport('/messages', res);
       const sessionId = transport.sessionId;
-      transports.set(sessionId, transport);
-      
+      sseTransports.set(sessionId, transport);
+
       transport.onclose = () => {
         console.log(`[sse] closed: ${sessionId}`);
-        transports.delete(sessionId);
+        sseTransports.delete(sessionId);
       };
-      
+
       // create mcp server for this session
       const mcpServer = createMcpServer(pluginManager);
       await mcpServer.connect(transport);
-      
+
       console.log(`[sse] established: ${sessionId}`);
     } catch (err) {
       console.error('[sse] error:', err);
@@ -467,24 +694,21 @@ async function main(): Promise<void> {
       }
     }
   });
-  
-  // -------------------------------------------------------------------------
-  // messages endpoint (for sse clients to post requests)
-  // -------------------------------------------------------------------------
+
   app.post('/messages', async (req: Request, res: Response) => {
     const sessionId = req.query.sessionId as string | undefined;
-    
+
     if (!sessionId) {
       res.status(400).send('Missing sessionId');
       return;
     }
-    
-    const transport = transports.get(sessionId);
+
+    const transport = sseTransports.get(sessionId);
     if (!transport) {
       res.status(404).send('Session not found');
       return;
     }
-    
+
     try {
       await transport.handlePostMessage(req, res, req.body);
     } catch (err) {
@@ -494,21 +718,7 @@ async function main(): Promise<void> {
       }
     }
   });
-  
-  // -------------------------------------------------------------------------
-  // health check endpoint
-  // -------------------------------------------------------------------------
-  app.get('/health', (_req: Request, res: Response) => {
-    res.json({
-      status: 'ok',
-      pluginConnected: pluginManager.hasActiveConnection(),
-      activeSessions: transports.size
-    });
-  });
-  
-  // -------------------------------------------------------------------------
-  // root endpoint - info
-  // -------------------------------------------------------------------------
+
   app.get('/', (_req: Request, res: Response) => {
     res.json({
       name: 'remnote-mcp-server',
@@ -522,43 +732,42 @@ async function main(): Promise<void> {
       pluginConnected: pluginManager.hasActiveConnection()
     });
   });
-  
-  // -------------------------------------------------------------------------
-  // start server
-  // -------------------------------------------------------------------------
-  httpServer.listen(PORT, () => {
+
+  // =========================================================================
+  // stdio transport (only in --stdio mode, used by cursor)
+  // =========================================================================
+
+  if (isStdioMode) {
+
+    const mcpServer = createMcpServer(pluginManager);
+    const transport = new StdioServerTransport();
+    await mcpServer.connect(transport);
+
+    console.log(`[stdio] mcp transport: stdio`);
+    console.log(`[stdio] sse also available: http://localhost:${actualPort}/sse`);
+    console.log(`[stdio] websocket for plugin: ws://localhost:${actualPort}`);
+
+  } else {
+
     console.log(`
 ╔════════════════════════════════════════════════════════════════╗
 ║                    RemNote MCP Server                          ║
 ╠════════════════════════════════════════════════════════════════╣
-║  HTTP/SSE:  http://localhost:${PORT}/sse                         ║
-║  WebSocket: ws://localhost:${PORT}                               ║
-║  Health:    http://localhost:${PORT}/health                      ║
+║  HTTP/SSE:  http://localhost:${actualPort}/sse                         ║
+║  WebSocket: ws://localhost:${actualPort}                               ║
+║  Health:    http://localhost:${actualPort}/health                      ║
 ╚════════════════════════════════════════════════════════════════╝
 
 Waiting for connections...
 - RemNote plugin connects via WebSocket
 - Claude/MCP clients connect via SSE at /sse
 `);
-  });
-  
+  }
+
   // graceful shutdown
   process.on('SIGINT', async () => {
     console.log('\nShutting down...');
-    
-    // close all sse transports
-    for (const [sessionId, transport] of transports) {
-      try {
-        await transport.close();
-      } catch (err) {
-        console.error(`Error closing transport ${sessionId}:`, err);
-      }
-    }
-    
-    // close websocket server
     wss.close();
-    
-    // close http server
     httpServer.close(() => {
       console.log('Server closed');
       process.exit(0);
